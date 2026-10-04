@@ -6,8 +6,10 @@ const rateLimit = require("express-rate-limit");
 const mysql = require("mysql2/promise");
 const crypto = require("crypto");
 const path = require("path");
+
 const app = express();
 const PORT = process.env.PORT || 3000;
+
 const pool = mysql.createPool({
   host: process.env.DB_HOST || "localhost",
   user: process.env.DB_USER || "root",
@@ -17,6 +19,7 @@ const pool = mysql.createPool({
   connectionLimit: 10,
   timezone: "+07:00",
 });
+
 app.use(helmet({ contentSecurityPolicy: false }));
 app.use(cors({ origin: process.env.CORS_ORIGIN || true }));
 app.use(express.json({ limit: "100kb" }));
@@ -26,8 +29,9 @@ app.use(
     max: 120,
     standardHeaders: true,
     legacyHeaders: false,
-  }),
+  })
 );
+
 function publicId() {
   return (
     "TM-" +
@@ -40,6 +44,7 @@ function publicId() {
       .padEnd(7, "X")
   );
 }
+
 function validDate(s) {
   if (typeof s !== "string" || !/^[0-9]{4}-[0-9]{2}-[0-9]{2}$/.test(s))
     return false;
@@ -48,9 +53,11 @@ function validDate(s) {
     !Number.isNaN(d.getTime()) && d >= new Date("1900-01-01") && d <= new Date()
   );
 }
+
 function cleanText(v, max = 100) {
   return typeof v === "string" ? v.trim().slice(0, max) : "";
 }
+
 function validate(body) {
   const name = cleanText(body.name),
     birthPlace = cleanText(body.birthPlace),
@@ -84,6 +91,7 @@ function validate(body) {
     conclusion: cleanText(body.conclusion, 5000),
   };
 }
+
 app.post("/api/readings", async (req, res) => {
   try {
     const v = validate(req.body);
@@ -92,7 +100,7 @@ app.post("/api/readings", async (req, res) => {
       id = publicId();
       const [x] = await pool.execute(
         "SELECT id FROM tarot_readings WHERE public_id=?",
-        [id],
+        [id]
       );
       if (!x.length) break;
     }
@@ -110,25 +118,25 @@ app.post("/api/readings", async (req, res) => {
         v.conclusion,
         v.visibility,
         cleanText(req.headers["x-session-id"], 128) || null,
-      ],
+      ]
     );
     res
       .status(201)
       .json({ success: true, publicId: id, insertId: result.insertId });
   } catch (e) {
-    res
-      .status(400)
-      .json({
-        success: false,
-        message: "Pembacaan belum dapat disimpan. Periksa data dan coba lagi.",
-      });
+    console.error("Error /api/readings:", e);
+    res.status(400).json({
+      success: false,
+      message: "Pembacaan belum dapat disimpan. Periksa data dan coba lagi.",
+    });
   }
 });
+
 app.get("/api/readings/:publicId", async (req, res) => {
   try {
     const [rows] = await pool.execute(
       "SELECT public_id,name,topic,cards,overview,interpretations,conclusion,visibility,created_at FROM tarot_readings WHERE public_id=? LIMIT 1",
-      [cleanText(req.params.publicId, 32)],
+      [cleanText(req.params.publicId, 32)]
     );
     if (!rows.length)
       return res
@@ -149,12 +157,13 @@ app.get("/api/readings/:publicId", async (req, res) => {
     res.status(500).json({ message: "Server sedang tidak tersedia." });
   }
 });
+
 app.delete("/api/readings/:publicId", async (req, res) => {
   try {
     const id = cleanText(req.params.publicId, 32);
     const [r] = await pool.execute(
       "DELETE FROM tarot_readings WHERE public_id=?",
-      [id],
+      [id]
     );
     if (!r.affectedRows)
       return res
@@ -162,18 +171,21 @@ app.delete("/api/readings/:publicId", async (req, res) => {
         .json({ message: "Pembacaan tidak ditemukan atau sudah dihapus." });
     res.json({ success: true });
   } catch (e) {
-    res.status(500).json({ message: "Server sedang tidak tersedia." });
+    res.status(500).json({ message: "Server sedang not tersedia." });
   }
 });
+
 app.get("/api/health", async (req, res) => {
   try {
     await pool.query("SELECT 1");
     res.json({ ok: true });
-  } catch {
-    res.status(503).json({ ok: false });
+  } catch (err) {
+    res.status(503).json({ ok: false, error: err.message });
   }
 });
+
 app.use(express.static(path.join(__dirname, "..")));
+
 app.listen(PORT, () =>
-  console.log(`Tarot-Modern API berjalan di http://localhost:${PORT}`),
+  console.log(`Tarot-Modern API berjalan di port ${PORT}`)
 );
